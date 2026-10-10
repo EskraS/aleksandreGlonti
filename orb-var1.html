@@ -360,16 +360,50 @@
         // write here
 
         let analyser = null;
+        let freqData = null;
 
         async function getMicrophone(){
 
             let audioRec = await navigator.mediaDevices.getUserMedia({audio: true});
 
             const audioContext = new AudioContext();
+            await audioContext.resume();
+            console.log("audio state:", audioContext.state);
             let source = audioContext.createMediaStreamSource(audioRec);
             analyser = audioContext.createAnalyser();
-        
+
+            analyser.fftSize =1024;
+            analyser.smoothingTimeConstant = 0.7;
+            freqData = new Uint8Array(analyser.frequencyBinCount)
+
+
+
+
             source.connect(analyser)
+
+        }
+
+        const voice = { low: 0, mid: 0, high: 0};
+
+        function bandLevel(loHz, hiHz){
+            const hzPerBin = analyser.context.sampleRate / analyser.fftSize;
+
+            const a = Math.floor(loHz / hzPerBin);
+            const b = Math.ceil(hiHz / hzPerBin);
+
+            let sum = 0;
+
+            for (let i = a; i < b; i++){
+                sum += freqData[i];
+            }
+
+            return sum = (sum / ((b-a) * 255))
+
+        }
+
+        function follow(current, target, dt) {
+            const speed = target > current ?  18 : 4
+            return current + (target - current) * (1 - Math.exp(-dt * speed));
         }
 
 
@@ -404,7 +438,22 @@
         };
 
         renderer.setAnimationLoop(() => {
+            
+
+            
             const dt = Math.min(clock.getDelta(), 0.05);
+
+            if(analyser) {
+                analyser.getByteFrequencyData(freqData)
+
+                voice.low = follow(voice.low, bandLevel(80, 300), dt);
+                voice.mid = follow(voice.mid, bandLevel(300, 1500), dt);
+                voice.high = follow(voice.high, bandLevel(1500, 5000), dt);
+
+                console.log(voice.low.toFixed(2), voice.mid.toFixed(2), voice.high.toFixed(2));
+            }
+
+            
             const time = clock.elapsedTime;
             const flowStep = dt * look.flow;
             const bootElapsed = time - bootStart;
@@ -444,6 +493,7 @@
             });
 
             composer.render();
+            
         });
 
         addEventListener("resize", resize);
@@ -473,7 +523,7 @@
                 color: "#cfe8ff", background: "rgba(20,28,40,0.75)",
                 border: "1px solid rgba(140,170,210,0.45)", borderRadius: "6px",
             })
-            micBtn.addEventListener("click", () => window.getMicrophone());
+            micBtn.addEventListener("click", () => getMicrophone());
             document.body.appendChild(micBtn);
         }
 
